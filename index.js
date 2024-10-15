@@ -1,94 +1,103 @@
-const { default: puppeteer } = require("puppeteer");
+const puppeteer = require("puppeteer");
 
 const loginSigaa = ""; // seu login do sigaa
 const senhaSigaa = ""; // sua senha do sigaa
 
-const materias = ["FGA0075"]; // coloque sem espacos o nome, codigo ou os dois no formato "codige - nomeDaMateria"
+const materias = ["FGA0053"]; // coloque sem espacos o nome, codigo ou os dois no formato "codige - nomeDaMateria"
 
 (async () => {
-  const browser = await puppeteer.launch();
+  const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
 
+  // Acesse a página de login
   await page.goto(
     "https://autenticacao.unb.br/sso-server/login?service=https://sig.unb.br/sipac/login/cas"
   );
 
-  await page.locator('input[name="username"]').fill(loginSigaa);
-  await page.locator('input[name="password"]').fill(senhaSigaa);
+  // Preenche os campos de login e senha
+  await page.type('input[name="username"]', loginSigaa);
+  await page.type('input[name="password"]', senhaSigaa);
 
-  const [response] = await Promise.all([
+  // Clica no botão de login e espera pela navegação
+  await Promise.all([
     page.waitForNavigation(),
-    page
-      .locator('button[class="btn-login cursor-pointer opacity-1 col-5"]')
-      .click(),
+    page.click('button[class="btn-login cursor-pointer opacity-1 col-5"]'),
   ]);
 
-  if (!response.ok()) {
-    console.log("Erro ao logar");
-    return;
+  // // Verifica se o login foi bem-sucedido
+  // const response = await page.waitForResponse((response) =>
+  //   response.url().includes("sig.unb.br")
+  // );
+
+  // if (!response.ok()) {
+  //   console.log("Erro ao logar");
+  //   return;
+  // }
+
+  //Fecha o aviso de cookies, se aparecer
+  const cookieButton = await page.$("#sigaa-cookie-consent > button");
+  if (cookieButton) {
+    await cookieButton.click();
   }
 
-  await page.locator("#sigaa-cookie-consent > button").click();
+  // // Navega até a página de matrícula
+  await page.hover("td.ThemeOfficeMainItem:nth-child(1)");
+  await page.hover("tr.ThemeOfficeMenuItem:nth-child(13) > td:nth-child(2)");
+  await page.hover(
+    "#cmSubMenuID3 > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(2)"
+  );
 
-  await page.locator("td.ThemeOfficeMainItem:nth-child(1)").hover();
-
-  await page
-    .locator("tr.ThemeOfficeMenuItem:nth-child(13) > td:nth-child(2)")
-    .hover();
-
-  await page
-    .locator(
+  // // Clica para navegar até a página de matrícula
+  await Promise.all([
+    page.waitForNavigation(),
+    page.click(
       "#cmSubMenuID3 > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(2)"
-    )
-    .hover();
-
-  const [response2] = await Promise.all([
-    page.waitForNavigation(),
-    page
-      .locator(
-        "#cmSubMenuID3 > table:nth-child(1) > tbody:nth-child(1) > tr:nth-child(3) > td:nth-child(2)"
-      )
-      .click(),
+    ),
   ]);
 
-  if (!response2.ok()) {
-    console.log("Erro ao navegar para selecionar pagina de matricula");
-    return;
-  }
+  // // Verifica se a navegação foi bem-sucedida
+  // if (!response.ok()) {
+  //   console.log("Erro ao navegar para selecionar página de matrícula");
+  //   return;
+  // }
 
-  await page.locator("#form\\:checkUnidade").click();
-
+  // // Seleciona a unidade e departamento
+  await page.click("#form\\:checkUnidade");
   await page.select("#form\\:comboDepartamento", "673"); // fga
-  const [response3] = await Promise.all([
-    page.waitForNavigation(),
-    page.locator("#form\\:buscar").click(),
-  ]);
 
-  if (!response3.ok()) {
-    console.log("Erro ao navegar para selecionar pagina de matricula");
-    return;
-  }
+  // Busca pelas matérias
+  await Promise.all([page.waitForNavigation(), page.click("#form\\:buscar")]);
 
-  materias.forEach(async (materia) => {
-    const materiaEncontrada = await page.evaluate((inputText) => {
-      const regexPattern = new RegExp(inputText, "i");
+  // // Verifica se cada matéria foi encontrada
+  const searchInterval = setInterval(async () => {
 
-      const elements = [...document.querySelectorAll("a")];
+    await Promise.all([page.waitForNavigation(), page.click("#form\\:buscar")]);
 
-      const element = elements.find((el) => {
-        const text = el.textContent.trim();
-        return regexPattern.test(text);
-      });
+    let materiaEncontrada = false;
 
-      return !!element;
-    }, materia);
+    for (const materia of materias) {
+      materiaEncontrada = await page.evaluate((inputText) => {
+        const regexPattern = new RegExp(inputText, "i");
+        const elements = [...document.querySelectorAll("a")];
+        const element = elements.find((el) => {
+          const text = el.textContent.trim();
+          return regexPattern.test(text);
+        });
+        return !!element;
+      }, materia);
 
-    if (materiaEncontrada) {
-      console.log("Materia encontrada!");
-    } else {
-      console.log("Materia nao encontrada");
+      if (materiaEncontrada) {
+        console.log("Matéria encontrada: ", materia);
+        break;
+      } else {
+        console.log("Matéria não encontrada: ", materia);
+      }
     }
-  });
 
-  await browser.close();
+    // Se a matéria for encontrada, limpa o intervalo e encerra o browser
+    if (materiaEncontrada) {
+      clearInterval(searchInterval);
+      await browser.close();
+    }
+  }, 10000);
 })();
